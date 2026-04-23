@@ -1,0 +1,26 @@
+# Conda Environment
+cascade-env/
+ArcGisProject/cascade-env/
+
+# ArcGIS Pro Specific
+*.lock
+*.gdb/
+Index/
+ImportLog/
+ArcGisProject/**/Index/
+ArcGisProject/**/ImportLog/
+ArcGisProject/**/*.lock
+ArcGisProject/**/*.gdb/
+
+# Data Directories (Large Rasters & Shapefiles)
+data/raw/
+data/processed/
+
+# PyTorch & AI Model Weights
+models/*.pth
+models/*.pt
+
+# Python Caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
