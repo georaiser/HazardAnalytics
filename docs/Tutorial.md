@@ -11,21 +11,33 @@ We will execute this entirely within a Windows environment, bridging **ArcGIS Pr
 
 To bridge the ESRI ecosystem with deep learning, we must set up a dedicated Python environment.
 
-### 1. Clone the ArcGIS Pro Environment
-1. Launch **ArcGIS Pro**. Create a new project called `Cascade Analytics Engine`.
-2. Go to **Settings** > **Package Manager**.
-3. The default `arcgispro-py3` environment is read-only. Click the "gear" icon, select **Clone**, and name it `cascade-env`.
-4. Right-click your new `cascade-env` and **Activate** it.
-
-### 2. Install Deep Learning Libraries
-For newer versions of ArcGIS Pro (like 3.0+), the conda solver often struggles to resolve dependencies (causing `LibMambaUnsatisfiableError`). 
+### 1. Install Deep Learning Libraries
+Before cloning the environment, we must install the necessary deep learning frameworks into the base ArcGIS Pro environment. For newer versions of ArcGIS Pro (like 3.0+), the conda solver often struggles to resolve dependencies (causing `LibMambaUnsatisfiableError`).
 
 The officially recommended and easiest method is to use ESRI's provided installer:
 1. Go to the official ESRI GitHub page: **[Esri/deep-learning-frameworks](https://github.com/Esri/deep-learning-frameworks)**
 2. Scroll down to the **Download** section and download the installer that matches your ArcGIS Pro version (e.g., ArcGIS Pro 3.5).
-3. Close ArcGIS Pro and run the installer (`.msi`). 
+3. Close ArcGIS Pro and run the installer (`.msi`).
 
 This will automatically install PyTorch, torchvision, and all necessary dependencies perfectly synced with `arcpy`, completely bypassing the need to use `conda install`!
+
+### 2. Clone the ArcGIS Pro Environment
+Now that the base environment has the deep learning tools installed, we can clone it to create our custom workspace.
+1. Launch **ArcGIS Pro**. Create a new project called `HazardArcGis`.
+2. Go to **Settings** > **Package Manager**.
+3. The default `arcgispro-py3` environment is read-only. Click the "gear" icon, select **Clone**, and name it `hazard-env`.
+4. Right-click your new `hazard-env` and **Activate** it.
+
+### 3. Activating the Environment (Terminal & IDE)
+ArcGIS Pro uses a specialized internal conda configuration. To use this environment outside of the ArcGIS Pro UI:
+
+**In a Terminal:**
+*   If you have Conda initialized in your PATH, simply run: `conda activate hazard-env`
+*   Otherwise, open your Windows Start Menu -> ArcGIS -> **Python Command Prompt**. This terminal automatically starts with your active ArcGIS environment.
+
+**In an IDE (e.g., VS Code):**
+*   Press `Ctrl + Shift + P` -> **Python: Select Interpreter**.
+*   Select `hazard-env` (Path is usually `C:\Users\<username>\AppData\Local\ESRI\conda\envs\hazard-env\python.exe`).
 
 ---
 
@@ -58,7 +70,7 @@ from arcpy.ia import *
 import os
 
 # 1. Setup Workspace and Projections
-arcpy.env.workspace = r"C:\Path\To\CascadeProject.gdb"
+arcpy.env.workspace = r"C:\Path\To\HazardArcGis.gdb"
 arcpy.env.overwriteOutput = True
 arcpy.CheckOutExtension("Spatial")
 arcpy.CheckOutExtension("Image")
@@ -68,17 +80,17 @@ sentinel_path = r"C:\RawData\Sentinel2_L2A.tif"
 
 print("1. Calculating Topography...")
 slope_raster = Slope(dem_path, "DEGREE")
-slope_raster.save("Cascade_Slope")
+slope_raster.save("Hazard_Slope")
 
 print("2. Calculating Hydrology & Routing...")
 filled_dem = Fill(dem_path)
 flow_dir = FlowDirection(filled_dem)
 flow_acc = FlowAccumulation(flow_dir)
-flow_acc.save("Cascade_FlowAcc")
+flow_acc.save("Hazard_FlowAcc")
 
 # Calculate distance to geological faults
 out_dist = DistanceAccumulation("Sernageomin_Faults", dem_path)
-out_dist.save("Cascade_FaultDist")
+out_dist.save("Hazard_FaultDist")
 
 print("3. Calculating Spectral Indices (Crop Health)...")
 # Sentinel-2: Band 8 (NIR), Band 4 (Red), Band 3 (Green)
@@ -88,8 +100,8 @@ green_band = arcpy.Raster(f"{sentinel_path}/Band_3")
 
 ndvi = Float(nir_band - red_band) / Float(nir_band + red_band) # Crop Health
 ndwi = Float(green_band - nir_band) / Float(green_band + nir_band) # Water Bodies
-ndvi.save("Cascade_NDVI")
-ndwi.save("Cascade_NDWI")
+ndvi.save("Hazard_NDVI")
+ndwi.save("Hazard_NDWI")
 
 print("Spatial feature engineering complete!")
 ```
@@ -113,7 +125,7 @@ If you don't know how to write the code for a specific tool:
 ### 2. From Python to UI (Creating a Custom Toolbox)
 You can turn our `02_arcpy_feature_engineering.py` script into a visual button that anyone can click, even if they don't know Python:
 1. In ArcGIS Pro, open the **Catalog** pane.
-2. Right-click **Toolboxes** -> **New Toolbox** (name it `Cascade_Tools.atbx`).
+2. Right-click **Toolboxes** -> **New Toolbox** (name it `Hazard_Tools.atbx`).
 3. Right-click your new toolbox -> **New** -> **Script**.
 4. In the **General** tab, name it "FeatureEngineering".
 5. In the **Execution** tab, point it to your `02_arcpy_feature_engineering.py` file.
@@ -136,26 +148,26 @@ import torch.nn as nn
 
 print("1. Bridging ArcGIS to PyTorch Tensors...")
 # Extract spatial reference data from base raster
-base_raster = arcpy.Raster("Cascade_Slope")
+base_raster = arcpy.Raster("Hazard_Slope")
 lower_left = arcpy.Point(base_raster.extent.XMin, base_raster.extent.YMin)
 cell_size = base_raster.meanCellWidth
 spatial_ref = base_raster.spatialReference
 
 # Convert Rasters to NumPy (ensure identical extents/resolutions first)
-arr_slope = arcpy.RasterToNumPyArray("Cascade_Slope", nodata_to_value=0)
-arr_flow  = arcpy.RasterToNumPyArray("Cascade_FlowAcc", nodata_to_value=0)
-arr_dist  = arcpy.RasterToNumPyArray("Cascade_FaultDist", nodata_to_value=0)
-arr_ndvi  = arcpy.RasterToNumPyArray("Cascade_NDVI", nodata_to_value=0)
-arr_ndwi  = arcpy.RasterToNumPyArray("Cascade_NDWI", nodata_to_value=0)
+arr_slope = arcpy.RasterToNumPyArray("Hazard_Slope", nodata_to_value=0)
+arr_flow  = arcpy.RasterToNumPyArray("Hazard_FlowAcc", nodata_to_value=0)
+arr_dist  = arcpy.RasterToNumPyArray("Hazard_FaultDist", nodata_to_value=0)
+arr_ndvi  = arcpy.RasterToNumPyArray("Hazard_NDVI", nodata_to_value=0)
+arr_ndwi  = arcpy.RasterToNumPyArray("Hazard_NDWI", nodata_to_value=0)
 
 # Shape: [Channels(5), Height, Width]
 stacked_array = np.stack([arr_slope, arr_flow, arr_dist, arr_ndvi, arr_ndwi], axis=0)
 tensor_input = torch.from_numpy(stacked_array).float().unsqueeze(0) # Add batch dimension
 
-print("2. Defining the Multi-Head CascadeNet...")
-class MultiHeadCascadeNet(nn.Module):
+print("2. Defining the Multi-Head HazardNet...")
+class MultiHeadHazardNet(nn.Module):
     def __init__(self):
-        super(MultiHeadCascadeNet, self).__init__()
+        super(MultiHeadHazardNet, self).__init__()
         # Shared Encoder (Feature Extractor)
         self.shared_conv = nn.Sequential(
             nn.Conv2d(5, 16, kernel_size=3, padding=1),
@@ -187,7 +199,7 @@ class MultiHeadCascadeNet(nn.Module):
         out_environment = self.head_environment(features)
         return out_disaster, out_agriculture, out_environment
 
-model = MultiHeadCascadeNet()
+model = MultiHeadHazardNet()
 model.eval()
 
 # NOTE: In reality, you would load pre-trained weights here via model.load_state_dict()
