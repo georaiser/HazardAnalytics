@@ -59,173 +59,89 @@ We will focus on the **Maule Region (Región del Maule)** or **Biobío Region**.
 
 ---
 
-## ⚙️ Phase 3: The `arcpy` Feature Engineering Pipeline
+## ⚙️ Phase 3: Workspace Setup & Feature Engineering
 
-Create a new Python script (`scripts/02_arcpy_feature_engineering.py`) or a Jupyter Notebook within ArcGIS Pro. We will automate the calculation of spatial indices and hydrological routing.
+Instead of running long, hardcoded Python scripts, we have modularized the spatial pipeline into tools that can be run directly from the ArcGIS Pro interface.
 
-```python
-import arcpy
-from arcpy.sa import *
-from arcpy.ia import *
-import os
+### 1. Workspace Initialization
+**Script:** `scripts/01_workspace_setup.py`
+This tool automates the creation of a dedicated Geodatabase (e.g., `Hazard_Outputs.gdb`) and sets it as your default workspace. This keeps your project organized and prevents intermediate deep learning files from bloating your main project.
 
-# 1. Setup Workspace and Projections
-arcpy.env.workspace = r"C:\Path\To\HazardArcGis.gdb"
-arcpy.env.overwriteOutput = True
-arcpy.CheckOutExtension("Spatial")
-arcpy.CheckOutExtension("Image")
+### 2. Feature Engineering Pipeline
+**Script:** `scripts/02_arcpy_feature_engineering.py`
+This tool ingests your raw DEM and Sentinel-2 imagery and calculates the necessary spatial inputs for the AI: Topography (Slope, Aspect, Curvature), Hydrology (Flow Accumulation), and Vegetation Indices (NDVI, NDWI).
 
-dem_path = r"C:\RawData\Maule_DEM.tif"
-sentinel_path = r"C:\RawData\Sentinel2_L2A.tif"
-
-print("1. Calculating Topography...")
-slope_raster = Slope(dem_path, "DEGREE")
-slope_raster.save("Hazard_Slope")
-
-print("2. Calculating Hydrology & Routing...")
-filled_dem = Fill(dem_path)
-flow_dir = FlowDirection(filled_dem)
-flow_acc = FlowAccumulation(flow_dir)
-flow_acc.save("Hazard_FlowAcc")
-
-# Calculate distance to geological faults
-out_dist = DistanceAccumulation("Sernageomin_Faults", dem_path)
-out_dist.save("Hazard_FaultDist")
-
-print("3. Calculating Spectral Indices (Crop Health)...")
-# Sentinel-2: Band 8 (NIR), Band 4 (Red), Band 3 (Green)
-red_band = arcpy.Raster(f"{sentinel_path}/Band_4")
-nir_band = arcpy.Raster(f"{sentinel_path}/Band_8")
-green_band = arcpy.Raster(f"{sentinel_path}/Band_3")
-
-ndvi = Float(nir_band - red_band) / Float(nir_band + red_band) # Crop Health
-ndwi = Float(green_band - nir_band) / Float(green_band + nir_band) # Water Bodies
-ndvi.save("Hazard_NDVI")
-ndwi.save("Hazard_NDWI")
-
-print("Spatial feature engineering complete!")
-```
+### 💡 Terminal Fallback (Optional)
+If you prefer scripting over clicking buttons in the UI, all of the scripts in this project are hybrid. They will automatically read from your terminal arguments if no ArcGIS UI inputs are provided. 
+For example, to run Workspace Setup from PowerShell:
+`python scripts\01_workspace_setup.py "D:\Path\To\Folder" "HazardOutputs.gdb"`
 
 ---
 
-## 🔄 Phase 3.5: Bridging Python (`arcpy`) and the ArcGIS Pro Interface
+## 🔄 Phase 3.5: Bridging Python and the ArcGIS Pro Interface
 
-A key part of learning ArcGIS Pro is understanding that **Python (`arcpy`) and the visual user interface are fully connected**. Anything you can click in the UI, you can write in Python, and vice versa!
+You can turn our Python scripts into visual buttons that anyone can click, even if they don't know Python!
 
-Here is how you transition between the two:
-
-### 1. From UI to Python ("Copy Python Command")
-If you don't know how to write the code for a specific tool:
-1. Open ArcGIS Pro and go to the **Analysis** tab -> **Tools** to open the Geoprocessing pane.
-2. Find the tool you want (e.g., *Focal Statistics*), fill out the parameters visually, and click **Run**.
-3. Go to the **View** tab -> **Geoprocessing History**.
-4. Right-click the tool you just ran and select **Copy Python Command**. 
-5. Paste it right into your script! This is the best way to learn `arcpy` syntax.
-
-### 2. From Python to UI (Creating a Custom Toolbox)
-You can turn our `02_arcpy_feature_engineering.py` script into a visual button that anyone can click, even if they don't know Python:
+### Adding Tools to your Project Toolbox
+When you created your `HazardArcGis` project, ArcGIS automatically generated a default toolbox for you.
 1. In ArcGIS Pro, open the **Catalog** pane.
-2. Right-click **Toolboxes** -> **New Toolbox** (name it `Hazard_Tools.atbx`).
-3. Right-click your new toolbox -> **New** -> **Script**.
-4. In the **General** tab, name it "FeatureEngineering".
-5. In the **Execution** tab, point it to your `02_arcpy_feature_engineering.py` file.
-6. In the **Parameters** tab, you can define inputs (like asking the user to select the `dem_path` visually instead of hard-coding it in the script).
-7. Now, when you double-click your new tool in ArcGIS Pro, it opens a standard visual window, but runs your Python code in the background!
+2. Expand **Toolboxes** and find the default `HazardArcGis.atbx` file.
+3. Right-click `HazardArcGis.atbx` -> **New** -> **Script**.
+
+**Tool 1: Workspace Setup**
+*   **General Tab:** Name it `WorkspaceSetup`
+*   **Execution Tab:** Point to `scripts/01_workspace_setup.py`
+*   **Parameters Tab:**
+    1. Label: `Folder Location` | Data Type: `Folder` | Direction: `Input`
+    2. Label: `Geodatabase Name` | Data Type: `String` | Direction: `Input`
+    3. Label: `Output Workspace` | Data Type: `Workspace` | Direction: `Output` (Derived)
+
+**Tool 2: Feature Engineering**
+*   **General Tab:** Name it `FeatureEngineering`
+*   **Execution Tab:** Point to `scripts/02_arcpy_feature_engineering.py`
+*   **Parameters Tab:**
+    1. Label: `Target Geodatabase` | Data Type: `Workspace`
+    2. Label: `DEM Raster` | Data Type: `Raster Layer`
+    3. Label: `Sentinel-2 Raster` | Data Type: `Raster Layer`
+    4. Label: `Geological Fault Lines` | Data Type: `Feature Layer` (Optional)
 
 ---
 
 ## 🧠 Phase 4: The Multi-Head PyTorch Bridge
 
-This is the core innovation. We convert our ArcGIS Rasters into a multi-dimensional NumPy array, feed it into a PyTorch model with three separate output heads, and map the outputs back.
+We have separated the PyTorch AI logic from the ArcGIS mapping logic to ensure maximum efficiency.
 
-Create a new script: `scripts/03_pytorch_multitask_model.py`
+### 1. The PyTorch Inference Engine
+**Script:** `scripts/03_pytorch_multitask_model.py`
+This tool loads the generated rasters, stacks them into a tensor, and feeds them into our `MultiHeadHazardNet`. Instead of trying to write rasters directly, it saves a raw PyTorch tensor file (`.pt`) containing the three distinct predictions: Disaster, Agriculture, and Environment.
 
-```python
-import arcpy
-import numpy as np
-import torch
-import torch.nn as nn
+### 2. The GIS Mapping Loop
+**Script:** `scripts/04_arcpy_mapping_loop.py`
+This tool ingests the `.pt` tensor file from the AI, extracts the spatial reference coordinates from your base DEM, and converts the raw arrays back into georeferenced ArcGIS Rasters.
 
-print("1. Bridging ArcGIS to PyTorch Tensors...")
-# Extract spatial reference data from base raster
-base_raster = arcpy.Raster("Hazard_Slope")
-lower_left = arcpy.Point(base_raster.extent.XMin, base_raster.extent.YMin)
-cell_size = base_raster.meanCellWidth
-spatial_ref = base_raster.spatialReference
+### Adding AI Tools to the Toolbox
+Right-click your `HazardArcGis.atbx` -> **New** -> **Script** for each of these:
 
-# Convert Rasters to NumPy (ensure identical extents/resolutions first)
-arr_slope = arcpy.RasterToNumPyArray("Hazard_Slope", nodata_to_value=0)
-arr_flow  = arcpy.RasterToNumPyArray("Hazard_FlowAcc", nodata_to_value=0)
-arr_dist  = arcpy.RasterToNumPyArray("Hazard_FaultDist", nodata_to_value=0)
-arr_ndvi  = arcpy.RasterToNumPyArray("Hazard_NDVI", nodata_to_value=0)
-arr_ndwi  = arcpy.RasterToNumPyArray("Hazard_NDWI", nodata_to_value=0)
+**Tool 3: PyTorch Inference**
+*   **Execution Tab:** `scripts/03_pytorch_multitask_model.py`
+*   **Parameters Tab:**
+    1. `Workspace Geodatabase` (Data Type: Workspace)
+    2. `Slope Raster` (Data Type: Raster Layer)
+    3. `Flow Accumulation Raster` (Data Type: Raster Layer)
+    4. `Distance to Faults Raster` (Data Type: Raster Layer)
+    5. `NDVI Raster` (Data Type: Raster Layer)
+    6. `NDWI Raster` (Data Type: Raster Layer)
+    7. `Output Tensor File (.pt)` (Data Type: File, Direction: Output)
 
-# Shape: [Channels(5), Height, Width]
-stacked_array = np.stack([arr_slope, arr_flow, arr_dist, arr_ndvi, arr_ndwi], axis=0)
-tensor_input = torch.from_numpy(stacked_array).float().unsqueeze(0) # Add batch dimension
-
-print("2. Defining the Multi-Head HazardNet...")
-class MultiHeadHazardNet(nn.Module):
-    def __init__(self):
-        super(MultiHeadHazardNet, self).__init__()
-        # Shared Encoder (Feature Extractor)
-        self.shared_conv = nn.Sequential(
-            nn.Conv2d(5, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.ReLU()
-        )
-        
-        # Head 1: Disaster (Flood/Landslide Risk)
-        self.head_disaster = nn.Sequential(
-            nn.Conv2d(32, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-        # Head 2: Agriculture (Crop Vulnerability)
-        self.head_agriculture = nn.Sequential(
-            nn.Conv2d(32, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-        # Head 3: Environment (Toxic Runoff)
-        self.head_environment = nn.Sequential(
-            nn.Conv2d(32, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        features = self.shared_conv(x)
-        out_disaster = self.head_disaster(features)
-        out_agriculture = self.head_agriculture(features)
-        out_environment = self.head_environment(features)
-        return out_disaster, out_agriculture, out_environment
-
-model = MultiHeadHazardNet()
-model.eval()
-
-# NOTE: In reality, you would load pre-trained weights here via model.load_state_dict()
-# For this tutorial, we simulate a forward pass with initialized weights.
-
-with torch.no_grad():
-    print("Running PyTorch Multi-Task Inference...")
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
-    tensor_input = tensor_input.to(device)
-    
-    pred_disaster, pred_agriculture, pred_env = model(tensor_input)
-
-print("3. Bridging PyTorch Tensors back to ArcGIS...")
-def tensor_to_raster(tensor, out_name):
-    array = tensor.cpu().squeeze().numpy()
-    raster = arcpy.NumPyArrayToRaster(array, lower_left, cell_size, value_to_nodata=0)
-    arcpy.management.DefineProjection(raster, spatial_ref)
-    raster.save(out_name)
-    print(f"Saved: {out_name}")
-
-tensor_to_raster(pred_disaster, "Pred_DisasterRisk")
-tensor_to_raster(pred_agriculture, "Pred_CropRisk")
-tensor_to_raster(pred_env, "Pred_ToxicityRisk")
-
-print("Pipeline Complete! The Cascade has been mapped.")
+**Tool 4: Mapping Loop**
+*   **Execution Tab:** `scripts/04_arcpy_mapping_loop.py`
+*   **Parameters Tab:**
+    1. `Input Tensor File (.pt)` (Data Type: File, Direction: Input)
+    2. `Reference Raster (e.g., DEM)` (Data Type: Raster Layer)
+    3. `Output Geodatabase` (Data Type: Workspace)
+    4. `Disaster Risk Name` (Data Type: String)
+    5. `Crop Risk Name` (Data Type: String)
+    6. `Toxicity Risk Name` (Data Type: String)
 ```
 
 ---
